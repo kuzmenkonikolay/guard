@@ -1,0 +1,44 @@
+# CodeScan — паттерны для обнаружения малвари
+# Формат: LEVEL|PATTERN|COMMENT
+# LEVEL: critical, suspicious, config
+# Этот файл — данные, не код. Исключён из сканирования.
+
+# ─── Критические (почти наверняка малварь) ───
+critical|eval\s*\(\s*(atob|Buffer\.from|unescape)|eval с деобфускацией
+critical|child_process.*spawn.*detached\s*:\s*true|detached процесс (как Beavertail)
+critical|Function\s*\(\s*["\x27]return\s+this|Function constructor sandbox escape
+critical|require\s*\(\s*["\x27]child_process["\x27]\s*\)\.exec|exec через child_process
+critical|\\x[0-9a-f]{2}.*\\x[0-9a-f]{2}.*\\x[0-9a-f]{2}.*eval|hex-обфускация + eval
+critical|new\s+Function\s*\(.*fromCharCode|Function + charcode деобфускация
+critical|process\.env.*\.split.*\.map.*String\.fromCharCode|env-based payload decode
+critical|crypto.*decipher.*update.*eval|decrypt + eval
+
+# ─── Подозрительные (требуют внимания) ───
+suspicious|eval\s*\(|любой eval
+suspicious|new\s+Function\s*\(|Function constructor
+suspicious|child_process|child_process usage
+suspicious|\.exec\s*\(\s*["\x27](curl|wget|bash|sh|node)|shell command execution
+suspicious|fromCharCode.*join|charcode деобфускация
+suspicious|Buffer\.from\s*\(.*base64|base64 decode
+suspicious|https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|hardcoded IP addresses
+suspicious|\\u[0-9a-f]{4}.*\\u[0-9a-f]{4}.*\\u[0-9a-f]{4}|unicode обфускация
+suspicious|preinstall.*curl\|sh|malicious npm preinstall
+suspicious|postinstall.*node\s+-e|malicious npm postinstall
+suspicious|XMLHttpRequest\|fetch.*eval|fetch + eval
+suspicious|dns\.resolve.*txt.*eval|DNS TXT record payload (dead drop)
+suspicious|tron\|aptos\|bsc.*transaction|blockchain dead drop resolver
+suspicious|windowsHide\s*:\s*true|hide window (как Beavertail)
+
+# ─── Конфиг-файлы которые не должны содержать сложную логику ───
+config|babel.config.js
+config|webpack.config.js
+config|.babelrc
+config|rollup.config.js
+config|vite.config.js
+config|jest.config.js
+config|.eslintrc.js
+config|prettier.config.js
+config|tailwind.config.js
+config|postcss.config.js
+config|next.config.js
+config|nuxt.config.js

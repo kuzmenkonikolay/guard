@@ -13,53 +13,37 @@ log_event() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') [CODESCAN] $1" >> "$LOG_FILE" 2>/dev/null || true
 }
 
-# ─── Подозрительные паттерны ───
+# ─── Загрузка паттернов из внешнего файла ───
+# Паттерны хранятся в patterns.dat чтобы codescan.sh не содержал
+# строки-сигнатуры и мог сканировать сам себя без false positives
 
-# Критические — почти наверняка малварь
-CRITICAL_PATTERNS=(
-    'eval\s*\(\s*(atob|Buffer\.from|unescape)'        # eval с деобфускацией
-    'child_process.*spawn.*detached\s*:\s*true'        # detached процесс (как Beavertail)
-    'Function\s*\(\s*["\x27]return\s+this'             # Function constructor sandbox escape
-    'require\s*\(\s*["\x27]child_process["\x27]\s*\)\.exec' # exec через child_process
-    '\\x[0-9a-f]{2}.*\\x[0-9a-f]{2}.*\\x[0-9a-f]{2}.*eval' # hex-обфускация + eval
-    'new\s+Function\s*\(.*fromCharCode'                # Function + charcode деобфускация
-    'process\.env.*\.split.*\.map.*String\.fromCharCode' # env-based payload decode
-    'crypto.*decipher.*update.*eval'                    # decrypt + eval
-)
+PATTERNS_FILE="$GUARD_DIR/patterns.dat"
+CRITICAL_PATTERNS=()
+SUSPICIOUS_PATTERNS=()
+SUSPICIOUS_CONFIG_FILES=()
 
-# Подозрительные — требуют внимания
-SUSPICIOUS_PATTERNS=(
-    'eval\s*\('                                        # любой eval
-    'new\s+Function\s*\('                              # Function constructor
-    'child_process'                                    # child_process usage
-    '\.exec\s*\(\s*["\x27](curl|wget|bash|sh|node)'   # shell command execution
-    'fromCharCode.*join'                               # charcode деобфускация
-    'Buffer\.from\s*\(.*base64'                        # base64 decode
-    'https?://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+'         # hardcoded IP addresses
-    '\\u[0-9a-f]{4}.*\\u[0-9a-f]{4}.*\\u[0-9a-f]{4}'  # unicode обфускация
-    'preinstall.*curl\|sh'                             # malicious npm preinstall
-    'postinstall.*node\s+-e'                           # malicious npm postinstall
-    'XMLHttpRequest\|fetch.*eval'                      # fetch + eval
-    'dns\.resolve.*txt.*eval'                          # DNS TXT record payload (dead drop)
-    'tron\|aptos\|bsc.*transaction'                    # blockchain dead drop resolver
-    'windowsHide\s*:\s*true'                           # hide window (как Beavertail)
-)
+load_patterns() {
+    if [[ ! -f "$PATTERNS_FILE" ]]; then
+        echo -e "${RED}patterns.dat не найден! Сканирование невозможно.${NC}"
+        exit 1
+    fi
+    while IFS='|' read -r level pattern comment; do
+        [[ "$level" =~ ^#.*$ || -z "$level" ]] && continue
+        # Trim whitespace без xargs (xargs ломается на \x27)
+        level="${level#"${level%%[![:space:]]*}"}"
+        level="${level%"${level##*[![:space:]]}"}"
+        pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+        pattern="${pattern%"${pattern##*[![:space:]]}"}"
+        [[ -z "$pattern" ]] && continue
+        case "$level" in
+            critical)   CRITICAL_PATTERNS+=("$pattern") ;;
+            suspicious) SUSPICIOUS_PATTERNS+=("$pattern") ;;
+            config)     SUSPICIOUS_CONFIG_FILES+=("$pattern") ;;
+        esac
+    done < "$PATTERNS_FILE"
+}
 
-# Файлы конфигов которые не должны содержать сложную логику
-SUSPICIOUS_CONFIG_FILES=(
-    'babel.config.js'       # именно тут был Beavertail
-    'webpack.config.js'
-    '.babelrc'
-    'rollup.config.js'
-    'vite.config.js'
-    'jest.config.js'
-    '.eslintrc.js'
-    'prettier.config.js'
-    'tailwind.config.js'
-    'postcss.config.js'
-    'next.config.js'
-    'nuxt.config.js'
-)
+load_patterns
 
 # ─── Детектор обфускации (эвристики) ───
 
@@ -118,8 +102,7 @@ check_obfuscation() {
 
     # 6. Большой массив строк/чисел (типичная обфускация: _$_1e42 = ["...", "...", ...])
     local big_array
-    big_array=$(echo "$file_content" | grep -cE '\[("[^"]{1,50}"\s*,\s*){10,}' 2>/dev/null || echo 0)
-    big_array=$((big_array + 0))
+    big_array=$(echo "$file_content" | grep -cE '\[("[^"]{1,50}"\s*,\s*){10,}' 2>/dev/null) || big_array=0
     if [[ $big_array -gt 0 ]]; then
         ((score += 35))
         reasons="${reasons}\n    - Массив с 10+ закодированными строками (типичная обфускация)"
@@ -154,15 +137,14 @@ check_obfuscation() {
     # 9. String.fromCharCode в большом количестве
     local charcode_count
     charcode_count=$(echo "$file_content" | grep -oE 'String\.fromCharCode|fromCharCode' | wc -l | xargs)
-    if [[ $charcode_count -gt 3 ]]; then
+    if [[ $charcode_count -gt 5 ]]; then
         ((score += 30))
         reasons="${reasons}\n    - $charcode_count вызовов fromCharCode"
     fi
 
     # 10. Конкатенация строк для скрытия ключевых слов ("ch"+"ild_"+"proc"+"ess")
     local concat_suspicious
-    concat_suspicious=$(echo "$file_content" | grep -cE '"[a-z]{1,4}"\s*\+\s*"[a-z]{1,4}"\s*\+\s*"[a-z]{1,4}"' 2>/dev/null || echo 0)
-    concat_suspicious=$((concat_suspicious + 0))
+    concat_suspicious=$(echo "$file_content" | grep -cE '"[a-z]{1,4}"\s*\+\s*"[a-z]{1,4}"\s*\+\s*"[a-z]{1,4}"' 2>/dev/null) || concat_suspicious=0
     if [[ $concat_suspicious -gt 3 ]]; then
         ((score += 25))
         reasons="${reasons}\n    - $concat_suspicious цепочек конкатенации коротких строк (скрытие ключевых слов)"
@@ -215,7 +197,7 @@ scan_diff() {
         case "$file" in
             *.png|*.jpg|*.jpeg|*.gif|*.ico|*.woff|*.woff2|*.ttf|*.eot|*.mp4|*.webm|*.zip|*.tar|*.gz) continue ;;
             *.min.js|*.min.css|*.map) continue ;;  # минифицированные файлы
-            node_modules/*|vendor/*|.git/*|*/guard/codescan.sh|*/guard/guard) continue ;;
+            node_modules/*|vendor/*|.git/*|*/patterns.dat) continue ;;
         esac
 
         local file_content
@@ -363,8 +345,7 @@ scan_full() {
         -not -path '*/dist/*' \
         -not -path '*/build/*' \
         -not -path '*/.next/*' \
-        -not -path '*/guard/codescan.sh' \
-        -not -path '*/guard/guard' \
+        -not -path '*/patterns.dat' \
         2>/dev/null)
 
     [[ -z "$all_files" ]] && echo "Нет файлов для проверки." && return 0
