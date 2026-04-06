@@ -1,0 +1,50 @@
+# FileGuard — список защищаемых файлов и директорий
+# Формат: CATEGORY|PATH (поддерживаются glob-паттерны)
+# ~ будет заменён на $HOME при обработке
+
+# SSH ключи и конфиг
+ssh|~/.ssh/id_*
+ssh|~/.ssh/config
+# known_hosts не секрет — это публичные ключи серверов, SSH сам его обновляет
+# ssh|~/.ssh/known_hosts
+
+# Environment и credentials
+env|~/.env
+env|~/.env.*
+
+# Rails credentials (master.key и production.key и т.д.)
+env|~/work/*/config/master.key
+env|~/work/*/config/credentials/*.key
+
+# AWS
+aws|~/.aws/credentials
+aws|~/.aws/config
+
+# Kubernetes
+kube|~/.kube/config
+
+# GPG
+gpg|~/.gnupg/private-keys-v1.d/*
+
+# macOS Keychain
+keychain|~/Library/Keychains/login.keychain-db
+
+# Chrome
+browser|~/Library/Application Support/Google/Chrome/Default/Cookies
+browser|~/Library/Application Support/Google/Chrome/Default/Login Data
+browser|~/Library/Application Support/Google/Chrome/Default/Web Data
+browser|~/Library/Application Support/Google/Chrome/Default/Extensions
+
+# Brave
+browser|~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies
+browser|~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Login Data
+browser|~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Web Data
+browser|~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Extensions
+
+# Firefox
+browser|~/Library/Application Support/Firefox/Profiles
+
+# Crypto wallets (Chrome extensions data)
+wallets|~/Library/Application Support/Google/Chrome/Default/Local Extension Settings/nkbihfbeogaeaoehlefnkodbefgpgknn
+wallets|~/Library/Application Support/Google/Chrome/Default/Local Extension Settings/bfnaelmomeimhlpmgjnjophhpkkoljpa
+wallets|~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Local Extension Settings/nkbihfbeogaeaoehlefnkodbefgpgknn

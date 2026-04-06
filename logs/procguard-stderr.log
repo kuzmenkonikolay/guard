@@ -1,0 +1,24 @@
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 12: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 13: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 20: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 21: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 30: node|/usr/local/: syntax error: operand expected (error token is "/usr/local/")
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 212: local: can only be used in a function
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 212: local: can only be used in a function
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 212: local: can only be used in a function
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 212: local: can only be used in a function
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 212: local: can only be used in a function
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 73: SimLaunchHost.arm64: syntax error: invalid arithmetic operator (error token is ".arm64")
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 12: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 13: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 20: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 21: declare: -A: invalid option
+declare: usage: declare [-afFirtx] [-p] [name[=value] ...]
+/Users/nikolajkuzmenko/work/guard/procguard-daemon.sh: line 30: node|/usr/local/: syntax error: operand expected (error token is "/usr/local/")

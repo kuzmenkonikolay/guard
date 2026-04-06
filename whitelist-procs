@@ -1,0 +1,86 @@
+# ProcessGuard — whitelist разрешённых процессов
+# Формат: PROCESS_NAME|ALLOWED_PATH_PREFIX|ALLOWED_ARGS_PATTERN
+# Пустое поле = любое значение допустимо
+# Строки начинающиеся с # — комментарии
+
+# === System ===
+kernel_task||
+launchd||
+loginwindow||
+WindowServer||
+systemstats||
+distnoted||
+cfprefsd||
+lsd||
+trustd||
+secd||
+securityd||
+coreauthd||
+opendirectoryd||
+syslogd||
+notifyd||
+powerd||
+diskarbitrationd||
+fseventsd||
+mds||
+mds_stores||
+mdworker_shared||
+bluetoothd||
+airportd||
+wifid||
+symptomsd||
+UserEventAgent||
+CommCenter||
+logd||
+coreduetd||
+containermanagerd||
+runningboardd||
+thermalmonitord||
+mediaremoted||
+contextstored||
+
+# === Dev tools ===
+node|/usr/local/|
+node|/opt/homebrew/|
+npm|/usr/local/|
+npm|/opt/homebrew/|
+python3|/usr/bin/|
+python3|/usr/local/|
+python3|/opt/homebrew/|
+ruby|/usr/bin/|
+git|/usr/bin/|
+git|/usr/local/|
+git|/opt/homebrew/|
+ssh|/usr/bin/|
+ssh-agent|/usr/bin/|
+gpg-agent|/usr/local/|
+gpg-agent|/opt/homebrew/|
+
+# === Browsers ===
+Google Chrome|/Applications/|
+Google Chrome Helper|/Applications/|
+Brave Browser|/Applications/|
+Brave Browser Helper|/Applications/|
+firefox|/Applications/|
+
+# === Editors/IDE ===
+code|/Applications/|
+Code Helper|/Applications/|
+Cursor|/Applications/|
+Cursor Helper|/Applications/|
+
+# === Terminal ===
+Terminal|/System/|
+iTerm2|/Applications/|
+tmux|/usr/|
+tmux|/opt/homebrew/|
+zsh|/bin/|
+bash|/bin/|
+
+# === Package managers ===
+brew|/opt/homebrew/|
+brew|/usr/local/|
+
+# === Claude Code ===
+claude|/usr/local/|
+claude|/opt/homebrew/|
