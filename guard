@@ -481,6 +481,12 @@ cmd_verify() {
     echo -e "${GREEN}Все проверки пройдены.${NC}"
 }
 
+# ─── Команда: scan ───
+cmd_scan() {
+    local target="${1:-.}"
+    "$GUARD_DIR/codescan.sh" scan "$target"
+}
+
 # ─── Команда: update-integrity ───
 cmd_update_integrity() {
     if [[ $EUID -ne 0 ]]; then
@@ -505,6 +511,7 @@ cmd_help() {
     echo "  guard add /path [category]    Добавить файл под защиту"
     echo "  guard remove /path            Убрать файл из защиты"
     echo "  guard verify                  Проверить целостность скриптов"
+    echo "  guard scan [path]             Сканировать код на малварь"
     echo "  guard update-integrity        Обновить хеши (после обновления скриптов)"
     echo ""
     echo "Категории: ssh, env, aws, kube, gpg, keychain, browser, wallets, all"
@@ -522,6 +529,7 @@ case "$command" in
     log)               cmd_log ;;
     add)               cmd_add "$@" ;;
     remove)            cmd_remove "$@" ;;
+    scan)              cmd_scan "$@" ;;
     verify)            cmd_verify ;;
     update-integrity)  cmd_update_integrity ;;
     help|--help|-h)    cmd_help ;;
