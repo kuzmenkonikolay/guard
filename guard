@@ -406,6 +406,18 @@ cmd_status() {
     else
         echo -e "  ProcessGuard: ${YELLOW}not running${NC}"
     fi
+
+    # Быстрая проверка Claude Code permissions
+    local claude_settings="$HOME_DIR/.claude/settings.json"
+    if [[ -f "$claude_settings" ]]; then
+        if grep -qF 'Bash(*)' "$claude_settings" 2>/dev/null; then
+            echo -e "  Claude Code: ${RED}DANGER — Bash(*) разрешён!${NC}"
+        elif grep -qE '"(allowedTools|allow)"' "$claude_settings" 2>/dev/null; then
+            echo -e "  Claude Code: ${YELLOW}есть allowedTools (запусти guard audit)${NC}"
+        else
+            echo -e "  Claude Code: ${GREEN}permissions OK${NC}"
+        fi
+    fi
 }
 
 # ─── Команда: log ───
@@ -487,6 +499,239 @@ cmd_scan() {
     "$GUARD_DIR/codescan.sh" scan "$target"
 }
 
+# ─── Команда: audit (проверка конфигов Claude Code) ───
+cmd_audit() {
+    echo -e "${BLUE}FileGuard — аудит конфигов AI-ассистентов${NC}"
+    echo ""
+
+    local alerts=0
+    local critical=0
+
+    # ─── Опасные wildcard-разрешения ───
+    # Bash(*) = ассистент может выполнить ЛЮБУЮ команду без подтверждения
+    # Edit(*) / Write(*) = может изменить любой файл на диске
+    local DANGEROUS_WILDCARDS=(
+        "Bash(\*)"
+        "Edit(\*)"
+        "Write(\*)"
+        "Bash(sudo"
+    )
+
+    # ─── Опасные конкретные разрешения ───
+    # Даже без wildcard, определённые команды не должны быть авто-одобрены
+    local DANGEROUS_COMMANDS=(
+        "Bash(rm "
+        "Bash(curl "
+        "Bash(wget "
+        "Bash(chmod "
+        "Bash(chown "
+        "Bash(mv "
+        "Bash(cp "
+        "Bash(dd "
+        "Bash(mkfs"
+        "Bash(kill "
+        "Bash(pkill "
+        "Bash(launchctl "
+        "Bash(defaults write"
+        "Bash(osascript"
+        "Bash(security "
+        "Bash(ssh "
+        "Bash(scp "
+        "Bash(rsync "
+        "Bash(git push"
+        "Bash(git reset"
+        "Bash(npm publish"
+        "Bash(npx "
+        "Bash(pip install"
+        "Bash(brew install"
+        "Bash(open "
+        "Bash(networksetup"
+        "Bash(dscl "
+        "Bash(crontab"
+    )
+
+    # ─── Все локации конфигов Claude Code ───
+    local config_files=()
+
+    # Глобальный settings
+    [[ -f "$HOME_DIR/.claude/settings.json" ]] && config_files+=("$HOME_DIR/.claude/settings.json")
+
+    # Проектные settings (могут быть подброшены в репо!)
+    while IFS= read -r pfile; do
+        [[ -n "$pfile" ]] && config_files+=("$pfile")
+    done < <(find "$HOME_DIR/work" "$HOME_DIR/projects" "$HOME_DIR/Developer" -maxdepth 4 \( -path "*/.claude/settings.json" -o -path "*/.claude/settings.local.json" \) 2>/dev/null || true)
+
+    # Также проверить текущую директорию
+    [[ -f ".claude/settings.json" ]] && config_files+=("$(pwd)/.claude/settings.json")
+    [[ -f ".claude/settings.local.json" ]] && config_files+=("$(pwd)/.claude/settings.local.json")
+
+    if [[ ${#config_files[@]} -eq 0 ]]; then
+        echo -e "${GREEN}Конфиги Claude Code не найдены.${NC}"
+        return 0
+    fi
+
+    # ─── Проверка каждого конфига ───
+    for config_path in "${config_files[@]}"; do
+        local content
+        content=$(cat "$config_path" 2>/dev/null) || continue
+
+        local file_alerts=0
+        local is_project_config=0
+
+        # Проектный конфиг внутри репозитория — сам по себе подозрителен
+        if [[ "$config_path" != "$HOME_DIR/.claude/settings.json" && "$config_path" != "$HOME_DIR/.claude.json" ]]; then
+            is_project_config=1
+        fi
+
+        echo -e "${YELLOW}─── $config_path ───${NC}"
+
+        # 1. Проверка allowedTools / permissions.allow на wildcard
+        for wc in "${DANGEROUS_WILDCARDS[@]}"; do
+            if echo "$content" | grep -qF "$(echo "$wc" | sed 's/\\//g')"; then
+                ((critical++))
+                ((file_alerts++))
+                local clean_wc
+                clean_wc=$(echo "$wc" | sed 's/\\//g')
+                echo -e "  ${RED}!!!  КРИТИЧЕСКОЕ: разрешение $clean_wc${NC}"
+                echo -e "  ${RED}     Ассистент может выполнять ЛЮБЫЕ действия этого типа без подтверждения!${NC}"
+                log_event "AUDIT_CRITICAL" "Claude config $config_path: dangerous wildcard $clean_wc"
+            fi
+        done
+
+        # 2. Проверка опасных конкретных команд
+        for cmd in "${DANGEROUS_COMMANDS[@]}"; do
+            if echo "$content" | grep -qF "$cmd"; then
+                ((alerts++))
+                ((file_alerts++))
+                echo -e "  ${YELLOW}  ⚠ Опасное разрешение: $cmd...${NC}"
+                echo -e "  ${YELLOW}    Эта команда может нанести ущерб без подтверждения${NC}"
+                log_event "AUDIT_WARN" "Claude config $config_path: dangerous command $cmd"
+            fi
+        done
+
+        # 3. Проверка MCP-серверов (только в settings.json, не в рантайм-файлах)
+        if echo "$content" | grep -qF '"mcpServers"'; then
+            # Извлечь имена серверов из блока mcpServers
+            local in_mcp=0
+            local mcp_names=""
+            while IFS= read -r json_line; do
+                if echo "$json_line" | grep -qF '"mcpServers"'; then
+                    in_mcp=1
+                    continue
+                fi
+                if [[ $in_mcp -eq 1 ]]; then
+                    # Выход из блока mcpServers при закрывающей }
+                    local server_name
+                    server_name=$(echo "$json_line" | grep -oE '"[a-zA-Z0-9_-]+"' | head -1 | tr -d '"')
+                    if [[ -n "$server_name" && "$server_name" != "command" && "$server_name" != "args" && "$server_name" != "env" ]]; then
+                        mcp_names="${mcp_names}${server_name}\n"
+                    fi
+                fi
+            done <<< "$content"
+
+            if [[ -n "$mcp_names" ]]; then
+                ((alerts++))
+                ((file_alerts++))
+                echo -e "  ${YELLOW}  ⚠ Настроены MCP-серверы:${NC}"
+                echo -e "$mcp_names" | sort -u | while IFS= read -r name; do
+                    [[ -n "$name" ]] && echo -e "    ${YELLOW}- $name${NC}"
+                done
+                echo -e "  ${YELLOW}    MCP-серверы могут выполнять код от имени пользователя. Проверь каждый.${NC}"
+            fi
+        fi
+
+        # 4. Проектный конфиг — предупреждение об атаке через репозиторий
+        if [[ $is_project_config -eq 1 ]]; then
+            # Проверить есть ли в нём permissions/allowedTools вообще
+            if echo "$content" | grep -qE '"(allowedTools|permissions|allow)"'; then
+                ((critical++))
+                ((file_alerts++))
+                echo -e "  ${RED}!!!  ПРОЕКТНЫЙ КОНФИГ СОДЕРЖИТ РАЗРЕШЕНИЯ!${NC}"
+                echo -e "  ${RED}     Файл внутри репозитория задаёт permissions — возможна атака!${NC}"
+                echo -e "  ${RED}     Злоумышленник мог подбросить этот файл через PR/commit.${NC}"
+                echo ""
+                echo -e "  ${RED}     Проверь git blame:${NC}"
+                echo -e "  ${RED}     git -C $(dirname "$(dirname "$config_path")") log --oneline -- .claude/settings.json${NC}"
+                log_event "AUDIT_CRITICAL" "Project config with permissions: $config_path"
+            fi
+
+            # Проверить есть ли hooks в проектном конфиге
+            if echo "$content" | grep -qE '"hooks"'; then
+                ((critical++))
+                ((file_alerts++))
+                echo -e "  ${RED}!!!  ПРОЕКТНЫЙ КОНФИГ СОДЕРЖИТ HOOKS!${NC}"
+                echo -e "  ${RED}     Hooks выполняют shell-команды автоматически.${NC}"
+                echo -e "  ${RED}     Это может быть вектор атаки через репозиторий!${NC}"
+                log_event "AUDIT_CRITICAL" "Project config with hooks: $config_path"
+            fi
+        fi
+
+        # 5. Проверка на подозрительные env переменные в MCP конфигах
+        if echo "$content" | grep -qEi '(API_KEY|SECRET|TOKEN|PASSWORD|PRIVATE)'; then
+            ((alerts++))
+            ((file_alerts++))
+            echo -e "  ${YELLOW}  ⚠ Конфиг может содержать секреты (ключи/токены)${NC}"
+            echo -e "  ${YELLOW}    Убедись что файл не попадёт в git!${NC}"
+            log_event "AUDIT_WARN" "Claude config may contain secrets: $config_path"
+        fi
+
+        if [[ $file_alerts -eq 0 ]]; then
+            echo -e "  ${GREEN}Чисто.${NC}"
+        fi
+        echo ""
+    done
+
+    # ─── Проверка CLAUDE.md файлов в проектах ───
+    echo -e "${YELLOW}─── Проверка CLAUDE.md ───${NC}"
+    local claude_md_alerts=0
+    while IFS= read -r md_file; do
+        [[ -z "$md_file" ]] && continue
+        local md_content
+        md_content=$(cat "$md_file" 2>/dev/null) || continue
+
+        # CLAUDE.md не должен содержать инструкции на скачивание/выполнение
+        if echo "$md_content" | grep -qEi '(curl|wget|bash -c|sh -c|eval|exec|npm run|npx )\s'; then
+            ((alerts++))
+            ((claude_md_alerts++))
+            echo -e "  ${YELLOW}  ⚠ $md_file содержит команды выполнения${NC}"
+            echo "$md_content" | grep -nEi '(curl|wget|bash -c|sh -c|eval|exec)' | head -3 | while IFS= read -r line; do
+                echo -e "    ${YELLOW}> $line${NC}"
+            done
+        fi
+    done < <(find "$HOME_DIR/work" "$HOME_DIR/projects" "$HOME_DIR/Developer" -maxdepth 3 -name "CLAUDE.md" 2>/dev/null || true)
+
+    if [[ $claude_md_alerts -eq 0 ]]; then
+        echo -e "  ${GREEN}Чисто.${NC}"
+    fi
+    echo ""
+
+    # ─── Итог ───
+    echo ""
+    if [[ $critical -gt 0 ]]; then
+        echo -e "${RED}╔══════════════════════════════════════════════════════════╗${NC}"
+        echo -e "${RED}║  НАЙДЕНО $critical КРИТИЧЕСКИХ ПРОБЛЕМ В КОНФИГАХ!              ║${NC}"
+        echo -e "${RED}║  AI-ассистент имеет слишком широкие разрешения!         ║${NC}"
+        echo -e "${RED}║                                                         ║${NC}"
+        echo -e "${RED}║  Рекомендация: удали wildcard-разрешения и настрой      ║${NC}"
+        echo -e "${RED}║  точечные permissions для каждого проекта отдельно.     ║${NC}"
+        echo -e "${RED}╚══════════════════════════════════════════════════════════╝${NC}"
+        log_event "AUDIT" "COMPLETED: $critical critical, $alerts total issues"
+
+        osascript -e "display dialog \"Guard Audit: НАЙДЕНО $critical КРИТИЧЕСКИХ ПРОБЛЕМ!\n\nAI-ассистент имеет слишком широкие разрешения.\nСмотри терминал для деталей.\" buttons {\"OK\"} default button \"OK\" with icon stop with title \"Guard Audit\"" 2>/dev/null || true
+        return 1
+
+    elif [[ $alerts -gt 0 ]]; then
+        echo -e "${YELLOW}[Audit] Найдено $alerts предупреждений. Проверь вручную.${NC}"
+        log_event "AUDIT" "COMPLETED: 0 critical, $alerts warnings"
+        return 0
+
+    else
+        echo -e "${GREEN}[Audit] Чисто. Конфиги AI-ассистентов в порядке.${NC}"
+        log_event "AUDIT" "COMPLETED: clean"
+        return 0
+    fi
+}
+
 # ─── Команда: update-integrity ───
 cmd_update_integrity() {
     if [[ $EUID -ne 0 ]]; then
@@ -512,6 +757,7 @@ cmd_help() {
     echo "  guard remove /path            Убрать файл из защиты"
     echo "  guard verify                  Проверить целостность скриптов"
     echo "  guard scan [path]             Сканировать код на малварь"
+    echo "  guard audit                   Аудит конфигов AI-ассистентов (Claude Code)"
     echo "  guard update-integrity        Обновить хеши (после обновления скриптов)"
     echo ""
     echo "Категории: ssh, env, aws, kube, gpg, keychain, browser, wallets, all"
@@ -530,6 +776,7 @@ case "$command" in
     add)               cmd_add "$@" ;;
     remove)            cmd_remove "$@" ;;
     scan)              cmd_scan "$@" ;;
+    audit)             cmd_audit ;;
     verify)            cmd_verify ;;
     update-integrity)  cmd_update_integrity ;;
     help|--help|-h)    cmd_help ;;

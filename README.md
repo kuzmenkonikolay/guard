@@ -327,6 +327,47 @@ git config --global core.hooksPath ~/.config/git/hooks
 
 После этого все `git pull` и `git checkout` во всех репозиториях будут автоматически проверяться.
 
+### git clone тоже сканируется
+
+Git hooks не работают при `git clone` (хуки появляются только внутри существующего репо). Поэтому в `~/.zshrc` добавлен wrapper:
+
+```bash
+# ─── Safe git clone (scan after clone) ───
+git() {
+    if [[ "$1" == "clone" ]]; then
+        command git "$@"
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
+            local clone_dir
+            if [[ -n "$3" ]]; then
+                clone_dir="$3"
+            else
+                clone_dir=$(basename "$2" .git)
+            fi
+            if [[ -d "$clone_dir" ]]; then
+                echo ""
+                ~/work/guard/codescan.sh scan "$clone_dir"
+            fi
+        fi
+        return $exit_code
+    else
+        command git "$@"
+    fi
+}
+```
+
+Добавь это в `~/.zshrc` и выполни `source ~/.zshrc`. После этого каждый `git clone` автоматически сканирует склонированный код:
+
+```
+$ git clone git@github.com:company/project.git
+Cloning into 'project'...
+done.
+
+[CodeScan] Полное сканирование: project
+[CodeScan] Проверяю 47 файлов...
+[CodeScan] Чисто. (47 файлов проверено)
+```
+
 ---
 
 ## Часть 4: Что происходит в фоне автоматически

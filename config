@@ -26,8 +26,9 @@ kube|~/.kube/config
 # GPG
 gpg|~/.gnupg/private-keys-v1.d/*
 
-# macOS Keychain
-keychain|~/Library/Keychains/login.keychain-db
+# macOS Keychain — НЕ защищаем, macOS постоянно обращается к нему
+# Keychain и так зашифрован паролем пользователя
+# keychain|~/Library/Keychains/login.keychain-db
 
 # Chrome
 browser|~/Library/Application Support/Google/Chrome/Default/Cookies
